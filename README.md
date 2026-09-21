@@ -11,7 +11,7 @@
 |---|---|
 | Frontend | Vue 3 + Vite + JavaScript, Pinia, Vue Router 4 |
 | Backend | Java 21, Spring Boot 4.1.0, Spring Framework 7, Gradle 8.14+ |
-| DB | PostgreSQL (1단계에서는 미연결) |
+| DB | PostgreSQL (Supabase, Flyway 마이그레이션) |
 
 ---
 
@@ -27,10 +27,11 @@
 ```bash
 cd backend
 
-# (선택) .env 파일 생성 — DB 연결 전까지는 없어도 됨
+# .env 파일 생성 후 DB 접속 정보 입력 (필수)
 cp .env.example .env
+# .env 에 DB_URL, DB_USERNAME, DB_PASSWORD 설정
 
-# 실행 (프로파일 기본값: local)
+# 실행 (프로파일 기본값: local, Flyway 마이그레이션 자동 적용)
 ./gradlew bootRun
 ```
 
@@ -48,7 +49,7 @@ npm install
 npm run dev
 ```
 
-브라우저에서 `http://localhost:5173` 를 열면 health API 호출 결과가 표시됩니다.
+브라우저에서 `http://localhost:5173` 를 열면 방 만들기 / 코드로 입장 화면이 표시됩니다.
 
 ### 프로파일 전환
 
@@ -65,7 +66,7 @@ SPRING_PROFILES_ACTIVE=prod ./gradlew bootRun
 
 | 변수 | 설명 | 기본값 |
 |---|---|---|
-| `DB_URL` | PostgreSQL JDBC URL | (없으면 DB 비활성화) |
+| `DB_URL` | PostgreSQL JDBC URL (Supabase Session pooler) | 필수 |
 | `DB_USERNAME` | DB 사용자 | — |
 | `DB_PASSWORD` | DB 비밀번호 | — |
 | `CORS_ALLOWED_ORIGIN` | CORS 허용 도메인 | `http://localhost:5173` |
