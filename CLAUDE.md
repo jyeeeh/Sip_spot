@@ -64,12 +64,27 @@ cd frontend && npm install && npm run dev
 
 - **결제 금액은 서버에서만 계산하고 클라이언트 값을 신뢰하지 않는다**
 - **시크릿 키를 코드에 하드코딩하지 않는다** — 환경변수 또는 `.env` 파일 사용
-- **커밋 메시지 형식**: `feat:` / `fix:` / `chore:`
+- **커밋 메시지 형식**: 타입 접두사(`feat` / `fix` / `chore` / `test` / `docs`)는 영어, 제목과 본문은 한국어
 - **한 번에 한 단계씩만 작업하고, 큰 변경 전에는 계획을 먼저 보여준다**
 - `.env`, `application-secret*` 파일은 절대 커밋하지 않는다
 - TypeScript는 사용하지 않는다 (frontend 전체 JavaScript)
 - WebSocket, 결제 코드는 별도 단계에서 추가한다
 - **Boot 3.x 방식으로 작성하지 않는다. 확실하지 않으면 공식 문서를 확인한다**
+- **프론트엔드에서 `v-html` 사용 금지. 사용자 입력은 항상 텍스트 바인딩(`{{ }}`)으로 출력한다**
+- **방 코드는 만료되지 않는다. 멤버 인증은 코드가 아니라 토큰으로 한다. 나중에 코드 갱신을 붙일 수 있도록 코드에 의존한 로직을 만들지 않는다**
+
+### 방 코드 규칙
+
+- charset: `ABCDEFGHJKLMNPQRSTUVWXYZ23456789` (32자, 혼동 문자 0·1·I·O 제외)
+- `SecureRandom`으로 7자 생성
+- DB unique 충돌 시 최대 5회 재생성 (트랜잭션 밖 루프)
+- 입력 코드는 항상 대문자로 정규화 후 처리
+
+### 토큰 규칙
+
+- `SecureRandom(32 bytes)` → base64url(패딩 없음) → 클라이언트 응답
+- DB에는 SHA-256 hex(64자)만 저장, 원문 토큰은 로그에 남기지 않는다
+- 프론트엔드는 토큰을 `localStorage`에 방 코드별(`sipspot_token_{CODE}`)로 저장
 
 ### Boot 4 / Spring Framework 7 / Jackson 3 주의사항
 

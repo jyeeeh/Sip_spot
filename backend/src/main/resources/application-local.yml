@@ -1,14 +1,25 @@
 spring:
-  # .env 파일이 있으면 자동으로 환경변수를 읽어들임 (없어도 무시)
   config:
     import: optional:file:.env[.properties]
 
-  # TODO: DB를 연결할 때 아래 두 줄(exclude)을 삭제하고 datasource 설정을 추가하세요.
-  # Spring Boot 4.x: autoconfiguration 패키지가 모듈별로 분리됨
-  autoconfigure:
-    exclude:
-      - org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration
-      - org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfiguration
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 5
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    baseline-version: 0
 
 logging:
   level:

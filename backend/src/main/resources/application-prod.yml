@@ -1,14 +1,25 @@
+server:
+  forward-headers-strategy: native
+
 spring:
   datasource:
     url: ${DB_URL}
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 5
 
   jpa:
     hibernate:
       ddl-auto: validate
     open-in-view: false
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    baseline-version: 0
 
 logging:
   level:
