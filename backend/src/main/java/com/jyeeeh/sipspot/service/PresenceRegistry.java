@@ -64,14 +64,22 @@ public class PresenceRegistry {
     }
 
     public void onDisconnect(String sessionId, Long accountId) {
-        Set<String> accountSessions = sessions.get(accountId);
-        if (accountSessions != null) {
-            accountSessions.remove(sessionId);
-        }
+        // 세션 하나만 원자적으로 제거하고, Set이 비었는지 확인
+        boolean[] becameEmpty = {false};
+        sessions.computeIfPresent(accountId, (id, set) -> {
+            set.remove(sessionId);
+            becameEmpty[0] = set.isEmpty();
+            return set;
+        });
+
+        // 세션이 아직 남아있으면 오프라인 처리 불필요 — 다른 세션이 살아있음
+        if (!becameEmpty[0]) return;
+
         String roomCode = accountRooms.get(accountId);
         if (roomCode == null) return;
 
         taskScheduler.schedule(() -> {
+            // 지연 후 재확인 (지연 시간 내 재연결 시 오프라인 브로드캐스트 취소)
             Set<String> remaining = sessions.get(accountId);
             if (remaining == null || remaining.isEmpty()) {
                 broadcastPresence(roomCode, false);
