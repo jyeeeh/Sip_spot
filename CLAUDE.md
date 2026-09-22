@@ -101,6 +101,16 @@ cd frontend && npm install && npm run dev
 - **오프라인 지연**: Presence 오프라인 처리는 3초 지연 (새로고침 깜빡임 방지)
 - **뷰어 카운트**: SUBSCRIBE 시 `PresenceRegistry.addViewer` 호출. 호스트 본인 제외. DISCONNECT 시 자동 정리
 
+### 커피 후원 규칙 (5단계~)
+
+- **커피 전송**: 로그인 불필요, 누구나 `POST /api/rooms/{code}/coffees` 가능
+- **커피 삭제**: 해당 방의 호스트 계정만 가능 (`DELETE /api/rooms/{code}/coffees/{id}`). 비호스트는 403, 존재하지 않는 항목은 404
+- **레이트 리밋**: 커피 전송은 IP당 5초 1회 제한 (`RateLimiter.isCoffeeBlocked`)
+- **status 필드**: `FREE_SENT` (무료 전송) / `PENDING` (결제 대기, 추후 사용). DB CHECK 제약으로 관리
+- **WS 이벤트**: `COFFEE_SENT` (coffee 객체 포함), `COFFEE_DELETED` (coffeeId 포함)
+- **프론트엔드**: 빈 메시지(null·빈 문자열)는 "커피를 후원했습니다."로 표시. DB는 null 그대로 저장
+- **브라우저 `confirm()` 사용 금지** — 삭제 확인은 커스텀 모달로 구현
+
 ### Boot 4 / Spring Framework 7 / Jackson 3 주의사항
 
 - **Jackson 3**: 패키지명이 `com.fasterxml.jackson` → `tools.jackson`으로 변경됨

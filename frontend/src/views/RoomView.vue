@@ -49,13 +49,64 @@
           </div>
         </div>
       </div>
+
+      <!-- 커피 패널 -->
+      <section class="coffee-panel">
+        <h3>☕ 커피</h3>
+
+        <!-- 게스트 전송 폼 -->
+        <form v-if="!isHost" class="coffee-form" @submit.prevent="handleSendCoffee">
+          <input
+            v-model="coffeeMessage"
+            type="text"
+            placeholder="응원 메시지 (선택)"
+            maxlength="200"
+          />
+          <button type="submit" :disabled="coffeeSending">보내기</button>
+        </form>
+        <p v-if="coffeeError" class="error">{{ coffeeError }}</p>
+        <p v-if="coffeeSent" class="coffee-sent">커피를 보냈습니다 ☕</p>
+
+        <!-- 커피 목록 -->
+        <div class="coffee-body">
+          <ul class="coffee-list">
+            <li v-for="coffee in pagedCoffees" :key="coffee.id" class="coffee-item">
+              <span class="coffee-msg">{{ coffee.message || '커피를 후원했습니다.' }}</span>
+              <button v-if="isHost" class="btn-delete" @click="requestDelete(coffee.id)">✕</button>
+            </li>
+            <li v-if="roomStore.coffees.length === 0" class="coffee-empty">아직 커피가 없습니다.</li>
+          </ul>
+        </div>
+
+        <!-- 페이지네이션 (6개 이상일 때만 표시) -->
+        <div v-if="totalPages > 1" class="coffee-pagination">
+          <button
+            v-for="page in totalPages"
+            :key="page"
+            class="page-btn"
+            :class="{ 'page-btn--active': coffeePage === page }"
+            @click="coffeePage = page"
+          >{{ page }}</button>
+        </div>
+      </section>
     </template>
 
   </main>
+
+  <!-- 삭제 확인 모달 -->
+  <div v-if="deleteConfirmId !== null" class="modal-overlay" @click.self="deleteConfirmId = null">
+    <div class="modal">
+      <p class="modal-text">정말 삭제하시겠습니까?</p>
+      <div class="modal-buttons">
+        <button class="btn-modal-confirm" @click="confirmDelete">확인</button>
+        <button class="btn-modal-cancel" @click="deleteConfirmId = null">취소</button>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth.js'
 import { useRoomStore } from '../stores/room.js'
@@ -93,6 +144,55 @@ const statusLabel = computed(() => {
 
 function moveToZone(zoneKey) {
   roomStore.sendLocation(zoneKey)
+}
+
+// ── 커피 ──────────────────────────────────────────────────────────────────
+
+const PAGE_SIZE = 5
+const coffeePage = ref(1)
+const totalPages = computed(() => Math.max(1, Math.ceil(roomStore.coffees.length / PAGE_SIZE)))
+const pagedCoffees = computed(() =>
+  roomStore.coffees.slice((coffeePage.value - 1) * PAGE_SIZE, coffeePage.value * PAGE_SIZE)
+)
+// 항목 삭제 등으로 totalPages가 줄면 현재 페이지를 마지막 페이지로 조정
+watch(totalPages, (pages) => {
+  if (coffeePage.value > pages) coffeePage.value = pages
+})
+
+const coffeeMessage = ref('')
+const coffeeSending = ref(false)
+const coffeeError = ref('')
+const coffeeSent = ref(false)
+const deleteConfirmId = ref(null)
+
+async function handleSendCoffee() {
+  coffeeError.value = ''
+  coffeeSent.value = false
+  coffeeSending.value = true
+  try {
+    await roomStore.sendCoffee(code, coffeeMessage.value.trim() || null)
+    coffeeMessage.value = ''
+    coffeeSent.value = true
+    setTimeout(() => { coffeeSent.value = false }, 3000)
+  } catch (e) {
+    coffeeError.value = e.message
+  } finally {
+    coffeeSending.value = false
+  }
+}
+
+function requestDelete(id) {
+  deleteConfirmId.value = id
+}
+
+async function confirmDelete() {
+  const id = deleteConfirmId.value
+  deleteConfirmId.value = null
+  try {
+    await roomStore.deleteCoffee(code, id)
+  } catch (e) {
+    // 이미 WS로 반영되므로 무시
+  }
 }
 
 onMounted(() => {
@@ -170,4 +270,32 @@ onUnmounted(() => {
 .center { text-align: center; margin-top: 40px; }
 .error  { color: red; }
 .btn    { display: block; margin: 16px auto; padding: 8px 16px; cursor: pointer; }
+
+/* ── 커피 패널 ─────────────────────────────────────────────────────────── */
+.coffee-panel { margin-top: 24px; border-top: 1px solid #dee2e6; padding-top: 16px; }
+.coffee-panel h3 { margin-bottom: 12px; font-size: 1rem; }
+.coffee-form { display: flex; gap: 8px; margin-bottom: 8px; }
+.coffee-form input { flex: 1; padding: 6px 8px; font-size: 0.9rem; border: 1px solid #dee2e6; border-radius: 4px; }
+.coffee-form button { padding: 6px 12px; font-size: 0.9rem; cursor: pointer; background: #0d6efd; color: #fff; border: none; border-radius: 4px; }
+.coffee-form button:disabled { opacity: 0.6; cursor: not-allowed; }
+.coffee-sent { color: #28a745; font-size: 0.85rem; margin-bottom: 8px; }
+.coffee-body { min-height: 252px; display: flex; flex-direction: column; }
+.coffee-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.coffee-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; background: #f8f9fa; border-radius: 6px; font-size: 0.9rem; }
+.coffee-msg { flex: 1; word-break: break-word; color: #343a40; }
+.coffee-empty { color: #adb5bd; font-size: 0.85rem; padding: 8px 0; }
+.btn-delete { background: none; border: none; color: #adb5bd; cursor: pointer; font-size: 0.85rem; padding: 0 4px; flex-shrink: 0; }
+.btn-delete:hover { color: #dc3545; }
+.coffee-pagination { display: flex; gap: 4px; margin-top: 10px; flex-wrap: wrap; }
+.page-btn { padding: 4px 10px; font-size: 0.85rem; border: 1px solid #dee2e6; border-radius: 4px; background: #fff; cursor: pointer; color: #495057; }
+.page-btn:hover { border-color: #0d6efd; color: #0d6efd; }
+.page-btn--active { background: #0d6efd; color: #fff; border-color: #0d6efd; }
+
+/* ── 삭제 확인 모달 ────────────────────────────────────────────────────── */
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 100; }
+.modal { background: #fff; border-radius: 8px; padding: 24px 28px; min-width: 240px; text-align: center; box-shadow: 0 4px 24px rgba(0,0,0,0.15); }
+.modal-text { margin-bottom: 18px; font-size: 1rem; color: #343a40; }
+.modal-buttons { display: flex; gap: 10px; justify-content: center; }
+.btn-modal-confirm { padding: 8px 20px; background: #dc3545; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9rem; }
+.btn-modal-cancel  { padding: 8px 20px; background: #f8f9fa; color: #343a40; border: 1px solid #dee2e6; border-radius: 4px; cursor: pointer; font-size: 0.9rem; }
 </style>
