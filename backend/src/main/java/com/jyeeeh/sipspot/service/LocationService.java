@@ -1,39 +1,44 @@
 package com.jyeeeh.sipspot.service;
 
 import com.jyeeeh.sipspot.domain.Location;
-import com.jyeeeh.sipspot.domain.Member;
+import com.jyeeeh.sipspot.domain.Room;
 import com.jyeeeh.sipspot.dto.ws.LocationChangedEvent;
-import com.jyeeeh.sipspot.repository.MemberRepository;
+import com.jyeeeh.sipspot.repository.RoomRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.UUID;
-
 @Service
 public class LocationService {
 
-    private final MemberRepository memberRepository;
+    private static final Logger log = LoggerFactory.getLogger(LocationService.class);
+
+    private final RoomRepository roomRepository;
     private final SimpMessagingTemplate messagingTemplate;
 
-    public LocationService(MemberRepository memberRepository,
+    public LocationService(RoomRepository roomRepository,
                            SimpMessagingTemplate messagingTemplate) {
-        this.memberRepository = memberRepository;
+        this.roomRepository = roomRepository;
         this.messagingTemplate = messagingTemplate;
     }
 
     @Transactional
-    public void updateLocation(UUID memberId, String roomCode, Location location) {
-        Member member = memberRepository.findById(memberId)
-                .orElseThrow(() -> new IllegalArgumentException("멤버를 찾을 수 없습니다: " + memberId));
+    public void updateLocation(Long accountId, String roomCode, Location location) {
+        Room room = roomRepository.findByCodeWithHost(roomCode).orElse(null);
+        if (room == null) return;
 
-        member.updateLocation(location);
-        memberRepository.save(member);
+        // 방어적 소유권 검증 (LocationMessageController에서 이미 확인하지만 이중 방어)
+        if (!room.getHost().getId().equals(accountId)) {
+            log.warn("위치 변경 거부: accountId={} != room.hostId={}", accountId, room.getHost().getId());
+            return;
+        }
 
-        // 민감 필드(tokenHash 등) 없이 브로드캐스트
-        LocationChangedEvent event = new LocationChangedEvent(
-                member.getId(), member.getNickname(), location.name()
-        );
-        messagingTemplate.convertAndSend("/topic/rooms/" + roomCode, event);
+        room.updateLocation(location);
+        roomRepository.save(room);
+
+        messagingTemplate.convertAndSend("/topic/rooms/" + roomCode,
+                new LocationChangedEvent(location.name()));
     }
 }

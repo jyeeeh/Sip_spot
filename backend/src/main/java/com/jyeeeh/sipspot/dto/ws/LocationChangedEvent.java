@@ -1,16 +1,10 @@
 package com.jyeeeh.sipspot.dto.ws;
 
 import java.time.Instant;
-import java.util.UUID;
 
-public record LocationChangedEvent(
-        String type,
-        UUID memberId,
-        String nickname,
-        String location,
-        Instant at
-) {
-    public LocationChangedEvent(UUID memberId, String nickname, String location) {
-        this("LOCATION_CHANGED", memberId, nickname, location, Instant.now());
+// 방에 호스트가 한 명이므로 신원 식별 필드(memberId, nickname) 제거
+public record LocationChangedEvent(String type, String location, Instant at) {
+    public LocationChangedEvent(String location) {
+        this("LOCATION_CHANGED", location, Instant.now());
     }
 }
