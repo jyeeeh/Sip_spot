@@ -1,6 +1,7 @@
 package com.jyeeeh.sipspot.exception;
 
 import com.jyeeeh.sipspot.service.AccountService;
+import com.jyeeeh.sipspot.service.CoffeeService;
 import com.jyeeeh.sipspot.service.RoomService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
@@ -52,6 +53,16 @@ public class GlobalExceptionHandler {
                 .findFirst()
                 .orElse("입력값이 올바르지 않습니다.");
         return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, detail);
+    }
+
+    @ExceptionHandler(ForbiddenException.class)
+    public ProblemDetail handleForbidden(ForbiddenException e) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, "권한이 없습니다.");
+    }
+
+    @ExceptionHandler(CoffeeService.CoffeeNotFoundException.class)
+    public ProblemDetail handleCoffeeNotFound(CoffeeService.CoffeeNotFoundException e) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, "존재하지 않는 커피입니다.");
     }
 
     @ExceptionHandler(RateLimitExceededException.class)
