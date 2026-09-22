@@ -1,14 +1,13 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { Client } from '@stomp/stompjs'
+import { useAuthStore } from './auth.js'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080'
 const WS_URL = API_BASE.replace(/^https/, 'wss').replace(/^http/, 'ws') + '/ws'
 
-const TOKEN_KEY = (code) => `sipspot_token_${code.toUpperCase()}`
-const MEMBER_ID_KEY = (code) => `sipspot_member_id_${code.toUpperCase()}`
-
 export const useRoomStore = defineStore('room', () => {
+  // room: { code, hostNickname, location, online, viewerCount } | null
   const room = ref(null)
   const loading = ref(false)
   const error = ref(null)
@@ -18,66 +17,28 @@ export const useRoomStore = defineStore('room', () => {
   let stompClient = null
   let currentCode = null
 
-  // ── localStorage ───────────────────────────────────────────────────────────
-
-  function saveToken(code, token) {
-    localStorage.setItem(TOKEN_KEY(code), token)
-  }
-
-  function loadToken(code) {
-    return localStorage.getItem(TOKEN_KEY(code))
-  }
-
-  function saveMemberId(code, memberId) {
-    localStorage.setItem(MEMBER_ID_KEY(code), memberId)
-  }
-
-  function loadMemberId(code) {
-    return localStorage.getItem(MEMBER_ID_KEY(code))
-  }
-
   // ── REST API ───────────────────────────────────────────────────────────────
 
-  async function createRoom(nickname) {
+  async function createRoom() {
+    const authStore = useAuthStore()
+    const token = authStore.loadToken()
     loading.value = true
     error.value = null
     try {
       const res = await fetch(`${API_BASE}/api/rooms`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nickname }),
+        headers: { Authorization: `Bearer ${token}` },
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
         throw new Error(err.detail ?? `오류 ${res.status}`)
       }
       const data = await res.json()
-      saveToken(data.code, data.token)
-      saveMemberId(data.code, data.memberId)
+      // authStore.account.room 갱신
+      if (authStore.account) {
+        authStore.account.room = { code: data.code, location: 'LIVING_ROOM', online: false }
+      }
       return data
-    } finally {
-      loading.value = false
-    }
-  }
-
-  async function joinRoom(code, nickname) {
-    loading.value = true
-    error.value = null
-    try {
-      const upperCode = code.toUpperCase()
-      const res = await fetch(`${API_BASE}/api/rooms/${upperCode}/join`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nickname }),
-      })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        throw new Error(err.detail ?? `오류 ${res.status}`)
-      }
-      const data = await res.json()
-      saveToken(upperCode, data.token)
-      saveMemberId(upperCode, data.memberId)
-      return { ...data, code: upperCode }
     } finally {
       loading.value = false
     }
@@ -87,16 +48,8 @@ export const useRoomStore = defineStore('room', () => {
     loading.value = true
     error.value = null
     const upperCode = code.toUpperCase()
-    const token = loadToken(upperCode)
-    if (!token) {
-      error.value = '입장 정보가 없습니다. 다시 입장해주세요.'
-      loading.value = false
-      return null
-    }
     try {
-      const res = await fetch(`${API_BASE}/api/rooms/${upperCode}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
+      const res = await fetch(`${API_BASE}/api/rooms/${upperCode}`)
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
         throw new Error(err.detail ?? `오류 ${res.status}`)
@@ -113,22 +66,16 @@ export const useRoomStore = defineStore('room', () => {
 
   // ── WebSocket / STOMP ──────────────────────────────────────────────────────
 
-  function connectStomp(code) {
+  function connectStomp(code, token) {
     const upperCode = code.toUpperCase()
-    const token = loadToken(upperCode)
-    if (!token) return
-
     currentCode = upperCode
+
+    const connectHeaders = token ? { Authorization: `Bearer ${token}` } : {}
+
     stompClient = new Client({
       brokerURL: WS_URL,
-      connectHeaders: { Authorization: `Bearer ${token}` },
+      connectHeaders,
       reconnectDelay: 3000,
-      debug: (msg) => {
-        if (msg.startsWith('>>> CONNECT')) {
-          console.debug('[STOMP] CONNECT 프레임 전송 —',
-            msg.includes('Authorization') ? 'Authorization 헤더 있음' : 'Authorization 헤더 없음')
-        }
-      },
       onConnect: () => {
         connected.value = true
         reconnecting.value = false
@@ -158,6 +105,7 @@ export const useRoomStore = defineStore('room', () => {
     connected.value = false
     reconnecting.value = false
     currentCode = null
+    room.value = null
   }
 
   function sendLocation(location) {
@@ -174,29 +122,17 @@ export const useRoomStore = defineStore('room', () => {
     if (!room.value) return
 
     if (event.type === 'LOCATION_CHANGED') {
-      const member = room.value.members.find((m) => m.id === event.memberId)
-      if (member) member.location = event.location
+      room.value.location = event.location
     } else if (event.type === 'PRESENCE_CHANGED') {
-      const member = room.value.members.find((m) => m.id === event.memberId)
-      if (member) member.online = event.online
-    } else if (event.type === 'MEMBER_JOINED') {
-      const exists = room.value.members.some((m) => m.id === event.memberId)
-      if (!exists) {
-        room.value.members.push({
-          id: event.memberId,
-          nickname: event.nickname,
-          location: event.location,
-          online: event.online,
-          host: false,
-        })
-      }
+      room.value.online = event.online
+    } else if (event.type === 'VIEWER_COUNT_CHANGED') {
+      room.value.viewerCount = event.count
     }
   }
 
   return {
     room, loading, error, connected, reconnecting,
-    createRoom, joinRoom, fetchRoom,
+    createRoom, fetchRoom,
     connectStomp, disconnectStomp, sendLocation,
-    loadToken, loadMemberId,
   }
 })

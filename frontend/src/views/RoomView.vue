@@ -1,6 +1,8 @@
 <template>
   <main class="room-page">
 
+    <button class="btn-home" @click="router.push('/')">← 홈으로</button>
+
     <!-- 연결 상태 뱃지 -->
     <div class="status-badge" :class="statusClass">
       {{ statusLabel }}
@@ -16,28 +18,34 @@
     </template>
 
     <template v-else-if="roomStore.room">
-      <h2 class="room-code">방 코드: {{ roomStore.room.code }}</h2>
+      <div class="room-header">
+        <div>
+          <h2 class="room-code">방 코드: {{ roomStore.room.code }}</h2>
+          <p class="host-info">
+            호스트: <strong>{{ roomStore.room.hostNickname }}</strong>
+            <span class="presence-dot" :class="roomStore.room.online ? 'dot--online' : 'dot--offline'"></span>
+          </p>
+        </div>
+        <div class="viewer-count">{{ roomStore.room.viewerCount ?? 0 }}명이 보고 있습니다</div>
+      </div>
 
-      <!-- 4구역 그리드 -->
+      <p v-if="isHost" class="host-hint">구역을 클릭해서 위치를 알려주세요</p>
+
+      <!-- 4구역 그리드 (호스트/게스트 공통) — 호스트만 클릭 활성화 -->
       <div class="zones">
         <div
           v-for="zone in ZONES"
           :key="zone.key"
           class="zone"
-          :class="{ 'zone--mine': isMyZone(zone.key) }"
-          @click="moveToZone(zone.key)"
+          :class="{
+            'zone--current': roomStore.room.location === zone.key,
+            'zone--clickable': isHost,
+          }"
+          @click="isHost && moveToZone(zone.key)"
         >
           <div class="zone-label">{{ zone.label }}</div>
-          <div class="avatars">
-            <div
-              v-for="m in membersInZone(zone.key)"
-              :key="m.id"
-              class="avatar"
-              :class="{ 'avatar--offline': !m.online, 'avatar--me': isMe(m.id) }"
-              :title="m.nickname"
-            >
-              {{ m.nickname.charAt(0).toUpperCase() }}
-            </div>
+          <div v-if="roomStore.room.location === zone.key" class="zone-avatar">
+            {{ roomStore.room.hostNickname.charAt(0).toUpperCase() }}
           </div>
         </div>
       </div>
@@ -49,10 +57,12 @@
 <script setup>
 import { computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useAuthStore } from '../stores/auth.js'
 import { useRoomStore } from '../stores/room.js'
 
 const route = useRoute()
 const router = useRouter()
+const authStore = useAuthStore()
 const roomStore = useRoomStore()
 
 const ZONES = [
@@ -62,8 +72,12 @@ const ZONES = [
   { key: 'OUTSIDE',     label: '밖' },
 ]
 
+const ZONE_LABELS = Object.fromEntries(ZONES.map(z => [z.key, z.label]))
+
 const code = route.params.code.toUpperCase()
-const myMemberId = roomStore.loadMemberId(code)
+
+// 이 방의 호스트인지 여부
+const isHost = computed(() => authStore.account?.room?.code === code)
 
 const statusClass = computed(() => ({
   'badge--connected':    roomStore.connected,
@@ -77,31 +91,14 @@ const statusLabel = computed(() => {
   return '연결 끊김'
 })
 
-function membersInZone(zoneKey) {
-  return roomStore.room?.members.filter((m) => m.location === zoneKey) ?? []
-}
-
-function isMyZone(zoneKey) {
-  if (!myMemberId || !roomStore.room) return false
-  const me = roomStore.room.members.find((m) => m.id === myMemberId)
-  return me?.location === zoneKey
-}
-
-function isMe(memberId) {
-  return memberId === myMemberId
-}
-
 function moveToZone(zoneKey) {
   roomStore.sendLocation(zoneKey)
 }
 
 onMounted(() => {
-  if (!roomStore.loadToken(code)) {
-    router.replace('/')
-    return
-  }
-  // connectStomp 내부에서 구독 → GET 스냅샷 순서 보장
-  roomStore.connectStomp(code)
+  // 호스트이면 인증 토큰으로 연결, 게스트이면 익명 연결
+  const token = isHost.value ? authStore.loadToken() : null
+  roomStore.connectStomp(code, token)
 })
 
 onUnmounted(() => {
@@ -123,37 +120,40 @@ onUnmounted(() => {
 .badge--reconnecting { background: #fff3cd; color: #856404; }
 .badge--disconnected { background: #f8d7da; color: #721c24; }
 
-.room-code { margin-bottom: 16px; }
+.room-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; }
+.room-code { margin-bottom: 4px; }
+.host-info { color: #495057; font-size: 0.9rem; display: flex; align-items: center; gap: 6px; }
+.presence-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.dot--online  { background: #28a745; }
+.dot--offline { background: #adb5bd; }
+.viewer-count { font-size: 0.85rem; color: #6c757d; text-align: right; }
+
+.host-hint { color: #6c757d; font-size: 0.9rem; margin-bottom: 12px; }
 
 .zones {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
 }
-
 .zone {
   border: 2px solid #dee2e6;
   border-radius: 12px;
   padding: 12px;
   min-height: 120px;
-  cursor: pointer;
+  cursor: default;
   transition: border-color 0.2s;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
 }
-.zone:hover         { border-color: #6c757d; }
-.zone--mine         { border-color: #0d6efd; background: #f0f4ff; }
-
-.zone-label {
-  font-weight: bold;
-  font-size: 0.9rem;
-  margin-bottom: 8px;
-  color: #495057;
-}
-
-.avatars { display: flex; flex-wrap: wrap; gap: 6px; }
-
-.avatar {
-  width: 36px;
-  height: 36px;
+.zone--clickable         { cursor: pointer; }
+.zone--clickable:hover   { border-color: #6c757d; }
+.zone--current           { border-color: #0d6efd; background: #f0f4ff; }
+.zone-label { font-weight: bold; font-size: 1rem; color: #495057; }
+.zone-avatar {
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
   background: #0d6efd;
   color: #fff;
@@ -161,12 +161,12 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   font-weight: bold;
-  font-size: 0.9rem;
-  transition: all 0.3s;
+  font-size: 1rem;
+  margin-top: 10px;
 }
-.avatar--offline { background: #adb5bd; }
-.avatar--me      { outline: 2px solid #fd7e14; outline-offset: 2px; }
 
+.btn-home { background: none; border: none; color: #6c757d; cursor: pointer; font-size: 0.9rem; padding: 0; margin-bottom: 12px; }
+.btn-home:hover { color: #343a40; }
 .center { text-align: center; margin-top: 40px; }
 .error  { color: red; }
 .btn    { display: block; margin: 16px auto; padding: 8px 16px; cursor: pointer; }
