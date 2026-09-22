@@ -27,6 +27,13 @@ public class Member {
     @Column(name = "joined_at", nullable = false, updatable = false)
     private OffsetDateTime joinedAt;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 16)
+    private Location location = Location.LIVING_ROOM;
+
+    @Column(name = "location_updated_at", nullable = false)
+    private OffsetDateTime locationUpdatedAt;
+
     protected Member() {}
 
     public Member(Room room, String nickname, String tokenHash, boolean host) {
@@ -36,6 +43,13 @@ public class Member {
         this.tokenHash = tokenHash;
         this.host = host;
         this.joinedAt = OffsetDateTime.now();
+        this.location = Location.LIVING_ROOM;
+        this.locationUpdatedAt = OffsetDateTime.now();
+    }
+
+    public void updateLocation(Location location) {
+        this.location = location;
+        this.locationUpdatedAt = OffsetDateTime.now();
     }
 
     public UUID getId() { return id; }
@@ -44,4 +58,6 @@ public class Member {
     public String getTokenHash() { return tokenHash; }
     public boolean isHost() { return host; }
     public OffsetDateTime getJoinedAt() { return joinedAt; }
+    public Location getLocation() { return location; }
+    public OffsetDateTime getLocationUpdatedAt() { return locationUpdatedAt; }
 }

@@ -79,12 +79,23 @@ cd frontend && npm install && npm run dev
 - `SecureRandom`으로 7자 생성
 - DB unique 충돌 시 최대 5회 재생성 (트랜잭션 밖 루프)
 - 입력 코드는 항상 대문자로 정규화 후 처리
+- **방 코드는 항상 대문자로 정규화해서 저장·비교한다**
 
 ### 토큰 규칙
 
 - `SecureRandom(32 bytes)` → base64url(패딩 없음) → 클라이언트 응답
 - DB에는 SHA-256 hex(64자)만 저장, 원문 토큰은 로그에 남기지 않는다
 - 프론트엔드는 토큰을 `localStorage`에 방 코드별(`sipspot_token_{CODE}`)로 저장
+- memberId도 `sipspot_member_id_{CODE}` 키로 저장 (위치 UI, 아바타 구분에 사용)
+
+### WebSocket 규칙
+
+- **토큰 전달**: STOMP CONNECT 프레임의 `Authorization: Bearer <token>` 헤더로만 전달. URL 쿼리 파라미터 사용 금지
+- **구독 권한**: `/topic/rooms/{code}`는 해당 방의 멤버만 구독 가능. 다른 방 또는 허용되지 않은 destination 구독 거부
+- **Principal 사용**: `memberId`는 반드시 `Principal`(`MemberPrincipal`)에서만 추출. 페이로드 값 신뢰 금지
+- **SEND 검증**: `@MessageMapping` 핸들러에서 URL `{code}`(대문자 정규화)와 `principal.roomCode()` 일치 여부 반드시 확인
+- **브로드캐스트**: `tokenHash` 등 민감 필드를 이벤트 메시지에 절대 포함하지 않는다
+- **오프라인 지연**: Presence 오프라인 처리는 3초 지연 (새로고침 깜빡임 방지)
 
 ### Boot 4 / Spring Framework 7 / Jackson 3 주의사항
 

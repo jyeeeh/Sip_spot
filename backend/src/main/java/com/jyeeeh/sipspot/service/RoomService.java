@@ -12,7 +12,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
-import java.util.Optional;
 
 @Service
 public class RoomService {
@@ -23,13 +22,16 @@ public class RoomService {
     private final MemberRepository memberRepo;
     private final RoomCodeGenerator codeGenerator;
     private final TokenService tokenService;
+    private final PresenceRegistry presenceRegistry;
 
     public RoomService(RoomRepository roomRepo, MemberRepository memberRepo,
-                       RoomCodeGenerator codeGenerator, TokenService tokenService) {
+                       RoomCodeGenerator codeGenerator, TokenService tokenService,
+                       PresenceRegistry presenceRegistry) {
         this.roomRepo = roomRepo;
         this.memberRepo = memberRepo;
         this.codeGenerator = codeGenerator;
         this.tokenService = tokenService;
+        this.presenceRegistry = presenceRegistry;
     }
 
     // 방 코드 재시도는 트랜잭션 밖 루프에서 새 트랜잭션으로 시도
@@ -101,7 +103,7 @@ public class RoomService {
                 .orElseThrow(() -> new RoomNotFoundException(normalizedCode));
 
         List<Member> members = room.getMembers();
-        return RoomDetailResponse.from(room, members);
+        return RoomDetailResponse.from(room, members, presenceRegistry::isOnline);
     }
 
     // ── 예외 클래스 ────────────────────────────────────────────────────────────
