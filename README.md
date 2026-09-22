@@ -79,6 +79,19 @@ SPRING_PROFILES_ACTIVE=prod ./gradlew bootRun
 
 ---
 
+## Render 배포 (Backend)
+
+| 항목 | 값 |
+|---|---|
+| Root Directory | `backend` |
+| Dockerfile 경로 | 자동 감지 (`backend/Dockerfile`) |
+| 포트 | Render가 `PORT` 환경변수를 주입, 앱이 자동으로 해당 포트를 사용 |
+
+환경변수(`DB_URL`, `DB_USERNAME`, `DB_PASSWORD`, `CORS_ALLOWED_ORIGIN`, `SPRING_PROFILES_ACTIVE=prod`)는
+Render 대시보드의 **Environment** 탭에서 설정합니다.
+
+---
+
 ## 개발 규칙
 
 - 결제 금액은 서버에서만 계산한다
