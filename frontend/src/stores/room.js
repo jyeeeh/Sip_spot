@@ -13,6 +13,8 @@ export const useRoomStore = defineStore('room', () => {
   const error = ref(null)
   const connected = ref(false)
   const reconnecting = ref(false)
+  // coffees: [{ id, message, status, createdAt }] (newest first)
+  const coffees = ref([])
 
   let stompClient = null
   let currentCode = null
@@ -64,6 +66,42 @@ export const useRoomStore = defineStore('room', () => {
     }
   }
 
+  async function fetchCoffees(code) {
+    const upperCode = code.toUpperCase()
+    const res = await fetch(`${API_BASE}/api/rooms/${upperCode}/coffees`)
+    if (res.ok) {
+      coffees.value = await res.json()
+    }
+  }
+
+  async function sendCoffee(code, message) {
+    const upperCode = code.toUpperCase()
+    const res = await fetch(`${API_BASE}/api/rooms/${upperCode}/coffees`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: message || null }),
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      throw new Error(err.detail ?? `오류 ${res.status}`)
+    }
+    return res.json()
+  }
+
+  async function deleteCoffee(code, id) {
+    const authStore = useAuthStore()
+    const token = authStore.loadToken()
+    const upperCode = code.toUpperCase()
+    const res = await fetch(`${API_BASE}/api/rooms/${upperCode}/coffees/${id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      throw new Error(err.detail ?? `오류 ${res.status}`)
+    }
+  }
+
   // ── WebSocket / STOMP ──────────────────────────────────────────────────────
 
   function connectStomp(code, token) {
@@ -84,6 +122,7 @@ export const useRoomStore = defineStore('room', () => {
           handleWsEvent(JSON.parse(msg.body))
         })
         fetchRoom(upperCode)
+        fetchCoffees(upperCode)
       },
       onStompError: () => {
         connected.value = false
@@ -106,6 +145,7 @@ export const useRoomStore = defineStore('room', () => {
     reconnecting.value = false
     currentCode = null
     room.value = null
+    coffees.value = []
   }
 
   function sendLocation(location) {
@@ -127,12 +167,17 @@ export const useRoomStore = defineStore('room', () => {
       room.value.online = event.online
     } else if (event.type === 'VIEWER_COUNT_CHANGED') {
       room.value.viewerCount = event.count
+    } else if (event.type === 'COFFEE_SENT') {
+      coffees.value.unshift(event.coffee)
+    } else if (event.type === 'COFFEE_DELETED') {
+      coffees.value = coffees.value.filter(c => c.id !== event.coffeeId)
     }
   }
 
   return {
-    room, loading, error, connected, reconnecting,
+    room, loading, error, connected, reconnecting, coffees,
     createRoom, fetchRoom,
     connectStomp, disconnectStomp, sendLocation,
+    fetchCoffees, sendCoffee, deleteCoffee,
   }
 })
