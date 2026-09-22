@@ -10,31 +10,31 @@ import java.util.concurrent.atomic.AtomicInteger;
 @Component
 public class RateLimiter {
 
-    // 입장 실패(404)만 카운트: IP당 15분 10회
-    private static final int JOIN_FAIL_LIMIT = 10;
-    private static final long JOIN_WINDOW_MS = 15 * 60 * 1000L;
+    // 로그인 실패: IP당 15분 10회
+    private static final int LOGIN_LIMIT = 10;
+    private static final long LOGIN_WINDOW_MS = 15 * 60 * 1000L;
 
-    // 방 생성: IP당 1시간 20회
-    private static final int CREATE_LIMIT = 20;
-    private static final long CREATE_WINDOW_MS = 60 * 60 * 1000L;
+    // 회원가입: IP당 1시간 5회
+    private static final int SIGNUP_LIMIT = 5;
+    private static final long SIGNUP_WINDOW_MS = 60 * 60 * 1000L;
 
-    private final ConcurrentHashMap<String, Window> joinFailMap = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, Window> createMap = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Window> loginMap = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Window> signupMap = new ConcurrentHashMap<>();
 
-    public boolean isJoinFailBlocked(String ip) {
-        return isBlocked(joinFailMap, ip, JOIN_WINDOW_MS, JOIN_FAIL_LIMIT);
+    public boolean isLoginBlocked(String ip) {
+        return isBlocked(loginMap, ip, LOGIN_WINDOW_MS, LOGIN_LIMIT);
     }
 
-    public void recordJoinFail(String ip) {
-        record(joinFailMap, ip, JOIN_WINDOW_MS);
+    public void recordLogin(String ip) {
+        record(loginMap, ip, LOGIN_WINDOW_MS);
     }
 
-    public boolean isCreateBlocked(String ip) {
-        return isBlocked(createMap, ip, CREATE_WINDOW_MS, CREATE_LIMIT);
+    public boolean isSignupBlocked(String ip) {
+        return isBlocked(signupMap, ip, SIGNUP_WINDOW_MS, SIGNUP_LIMIT);
     }
 
-    public void recordCreate(String ip) {
-        record(createMap, ip, CREATE_WINDOW_MS);
+    public void recordSignup(String ip) {
+        record(signupMap, ip, SIGNUP_WINDOW_MS);
     }
 
     private boolean isBlocked(ConcurrentHashMap<String, Window> map, String ip,
@@ -62,8 +62,8 @@ public class RateLimiter {
     @Scheduled(fixedDelay = 5 * 60 * 1000L)
     public void evictExpired() {
         long now = Instant.now().toEpochMilli();
-        joinFailMap.entrySet().removeIf(e -> now - e.getValue().startMs > JOIN_WINDOW_MS);
-        createMap.entrySet().removeIf(e -> now - e.getValue().startMs > CREATE_WINDOW_MS);
+        loginMap.entrySet().removeIf(e -> now - e.getValue().startMs > LOGIN_WINDOW_MS);
+        signupMap.entrySet().removeIf(e -> now - e.getValue().startMs > SIGNUP_WINDOW_MS);
     }
 
     private static class Window {

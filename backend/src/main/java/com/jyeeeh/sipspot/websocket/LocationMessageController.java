@@ -25,13 +25,13 @@ public class LocationMessageController {
     public void handleLocation(@DestinationVariable String code,
                                @Payload LocationPayload payload,
                                Principal principal) {
-        if (!(principal instanceof MemberPrincipal memberPrincipal)) return;
+        if (!(principal instanceof AccountPrincipal accountPrincipal)) return;
 
-        // 1. URL code 대문자 정규화 후 Principal의 roomCode와 비교 (수정 1·5)
+        // URL code 대문자 정규화 후 Principal의 roomCode와 비교
         String normalizedCode = code.toUpperCase();
-        if (!normalizedCode.equals(memberPrincipal.roomCode())) return;
+        if (!normalizedCode.equals(accountPrincipal.roomCode())) return;
 
-        // 2. location 값 enum 검증
+        // location 값 enum 검증
         Location location;
         try {
             location = Location.valueOf(payload.location().toUpperCase());
@@ -39,11 +39,11 @@ public class LocationMessageController {
             return; // 잘못된 값 무시
         }
 
-        // 3. 멤버당 초당 2회 제한
-        if (!rateLimiter.tryAcquire(memberPrincipal.memberId())) return;
+        // 계정당 초당 2회 제한
+        if (!rateLimiter.tryAcquire(accountPrincipal.accountId())) return;
 
-        // 4. DB 저장 + 브로드캐스트 (memberId는 Principal에서만)
-        locationService.updateLocation(memberPrincipal.memberId(), normalizedCode, location);
+        // DB 저장 + 브로드캐스트 (accountId는 Principal에서만)
+        locationService.updateLocation(accountPrincipal.accountId(), normalizedCode, location);
     }
 
     public record LocationPayload(String location) {}

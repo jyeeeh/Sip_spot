@@ -2,8 +2,6 @@ package com.jyeeeh.sipspot.domain;
 
 import jakarta.persistence.*;
 import java.time.OffsetDateTime;
-import java.util.ArrayList;
-import java.util.List;
 
 @Entity
 @Table(name = "room")
@@ -19,22 +17,36 @@ public class Room {
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
 
-    @Column(name = "max_members", nullable = false)
-    private int maxMembers = 8;
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "host_account_id", nullable = false)
+    private Account host;
 
-    @OneToMany(mappedBy = "room", cascade = CascadeType.ALL, orphanRemoval = true)
-    private List<Member> members = new ArrayList<>();
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 16)
+    private Location location;
+
+    @Column(name = "location_updated_at", nullable = false)
+    private OffsetDateTime locationUpdatedAt;
 
     protected Room() {}
 
-    public Room(String code) {
+    public Room(String code, Account host) {
         this.code = code;
+        this.host = host;
         this.createdAt = OffsetDateTime.now();
+        this.location = Location.LIVING_ROOM;
+        this.locationUpdatedAt = OffsetDateTime.now();
+    }
+
+    public void updateLocation(Location location) {
+        this.location = location;
+        this.locationUpdatedAt = OffsetDateTime.now();
     }
 
     public Long getId() { return id; }
     public String getCode() { return code; }
     public OffsetDateTime getCreatedAt() { return createdAt; }
-    public int getMaxMembers() { return maxMembers; }
-    public List<Member> getMembers() { return members; }
+    public Account getHost() { return host; }
+    public Location getLocation() { return location; }
+    public OffsetDateTime getLocationUpdatedAt() { return locationUpdatedAt; }
 }

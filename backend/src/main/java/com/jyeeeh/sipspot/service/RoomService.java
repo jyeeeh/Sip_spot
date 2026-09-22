@@ -1,17 +1,13 @@
 package com.jyeeeh.sipspot.service;
 
-import com.jyeeeh.sipspot.domain.Member;
+import com.jyeeeh.sipspot.domain.Account;
 import com.jyeeeh.sipspot.domain.Room;
-import com.jyeeeh.sipspot.dto.CreateRoomResponse;
-import com.jyeeeh.sipspot.dto.JoinRoomResponse;
-import com.jyeeeh.sipspot.dto.RoomDetailResponse;
-import com.jyeeeh.sipspot.repository.MemberRepository;
+import com.jyeeeh.sipspot.dto.RoomPublicResponse;
+import com.jyeeeh.sipspot.repository.AccountRepository;
 import com.jyeeeh.sipspot.repository.RoomRepository;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.util.List;
 
 @Service
 public class RoomService {
@@ -19,29 +15,36 @@ public class RoomService {
     private static final int MAX_CODE_RETRIES = 5;
 
     private final RoomRepository roomRepo;
-    private final MemberRepository memberRepo;
+    private final AccountRepository accountRepo;
     private final RoomCodeGenerator codeGenerator;
-    private final TokenService tokenService;
     private final PresenceRegistry presenceRegistry;
 
-    public RoomService(RoomRepository roomRepo, MemberRepository memberRepo,
-                       RoomCodeGenerator codeGenerator, TokenService tokenService,
-                       PresenceRegistry presenceRegistry) {
+    public RoomService(RoomRepository roomRepo, AccountRepository accountRepo,
+                       RoomCodeGenerator codeGenerator, PresenceRegistry presenceRegistry) {
         this.roomRepo = roomRepo;
-        this.memberRepo = memberRepo;
+        this.accountRepo = accountRepo;
         this.codeGenerator = codeGenerator;
-        this.tokenService = tokenService;
         this.presenceRegistry = presenceRegistry;
     }
 
     // 방 코드 재시도는 트랜잭션 밖 루프에서 새 트랜잭션으로 시도
-    public CreateRoomResponse createRoom(String nickname) {
+    public CreateRoomResult createRoom(Long accountId) {
+        Account account = accountRepo.findById(accountId)
+                .orElseThrow(AccountService.UnauthorizedException::new);
+
+        // 이미 방이 있으면 거부
+        if (roomRepo.findByHostAccountId(accountId).isPresent()) {
+            throw new AlreadyHasRoomException();
+        }
+
         for (int attempt = 0; attempt < MAX_CODE_RETRIES; attempt++) {
             String code = codeGenerator.generate();
             try {
-                return doCreateRoom(code, nickname.trim());
+                return doCreateRoom(code, account);
             } catch (DataIntegrityViolationException e) {
                 if (isCodeConflict(e)) continue;
+                // host_account_id 중복이면 AlreadyHasRoomException
+                if (isHostConflict(e)) throw new AlreadyHasRoomException();
                 throw e;
             }
         }
@@ -49,62 +52,30 @@ public class RoomService {
     }
 
     @Transactional
-    protected CreateRoomResponse doCreateRoom(String code, String nickname) {
-        Room room = new Room(code);
+    protected CreateRoomResult doCreateRoom(String code, Account account) {
+        Room room = new Room(code, account);
         roomRepo.save(room);
-
-        String token = tokenService.generateToken();
-        Member member = new Member(room, nickname, tokenService.hash(token), true);
-        try {
-            memberRepo.save(member);
-        } catch (DataIntegrityViolationException e) {
-            throw e; // 닉네임/코드 충돌 — 상위로 전달
-        }
-        return new CreateRoomResponse(room.getCode(), member.getId(), token);
+        return new CreateRoomResult(room.getCode());
     }
 
-    @Transactional
-    public JoinRoomResponse joinRoom(String code, String nickname) {
-        String normalizedCode = code.toUpperCase();
-        String trimmedNickname = nickname.trim();
-
-        Room room = roomRepo.findByCodeForUpdate(normalizedCode)
-                .orElseThrow(() -> new RoomNotFoundException(normalizedCode));
-
-        int currentCount = memberRepo.countByRoomId(room.getId());
-        if (currentCount >= room.getMaxMembers()) {
-            throw new RoomFullException();
-        }
-
-        String token = tokenService.generateToken();
-        Member member = new Member(room, trimmedNickname, tokenService.hash(token), false);
-        try {
-            memberRepo.save(member);
-            memberRepo.flush();
-        } catch (DataIntegrityViolationException e) {
-            throw new NicknameConflictException();
-        }
-        return new JoinRoomResponse(member.getId(), token);
-    }
-
-    // 토큰 검증 후 방 조회
     @Transactional(readOnly = true)
-    public RoomDetailResponse getRoom(String code, String token) {
-        String tokenHash = tokenService.hash(token);
-        Member caller = memberRepo.findByTokenHash(tokenHash)
-                .orElseThrow(UnauthorizedException::new);
-
+    public RoomPublicResponse getRoom(String code) {
         String normalizedCode = code.toUpperCase();
-        if (!caller.getRoom().getCode().equals(normalizedCode)) {
-            throw new UnauthorizedException();
-        }
-
-        Room room = roomRepo.findByCode(normalizedCode)
+        Room room = roomRepo.findByCodeWithHost(normalizedCode)
                 .orElseThrow(() -> new RoomNotFoundException(normalizedCode));
 
-        List<Member> members = room.getMembers();
-        return RoomDetailResponse.from(room, members, presenceRegistry::isOnline);
+        return new RoomPublicResponse(
+                room.getCode(),
+                room.getHost().getNickname(),
+                room.getLocation().name(),
+                presenceRegistry.isOnline(room.getHost().getId()),
+                presenceRegistry.getViewerCount(room.getCode())
+        );
     }
+
+    // ── 응답 레코드 ────────────────────────────────────────────────────────────
+
+    public record CreateRoomResult(String code) {}
 
     // ── 예외 클래스 ────────────────────────────────────────────────────────────
 
@@ -112,16 +83,17 @@ public class RoomService {
         public RoomNotFoundException(String code) { super(code); }
     }
 
-    public static class RoomFullException extends RuntimeException {}
-
-    public static class NicknameConflictException extends RuntimeException {}
-
-    public static class UnauthorizedException extends RuntimeException {}
+    public static class AlreadyHasRoomException extends RuntimeException {}
 
     // ── 내부 유틸 ──────────────────────────────────────────────────────────────
 
     private boolean isCodeConflict(DataIntegrityViolationException e) {
         String msg = e.getMostSpecificCause().getMessage();
         return msg != null && msg.contains("room_code_unique");
+    }
+
+    private boolean isHostConflict(DataIntegrityViolationException e) {
+        String msg = e.getMostSpecificCause().getMessage();
+        return msg != null && msg.contains("room_host_account_unique");
     }
 }

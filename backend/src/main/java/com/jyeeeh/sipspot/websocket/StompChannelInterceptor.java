@@ -1,9 +1,14 @@
 package com.jyeeeh.sipspot.websocket;
 
-import com.jyeeeh.sipspot.repository.MemberRepository;
+import com.jyeeeh.sipspot.domain.AccountSession;
+import com.jyeeeh.sipspot.repository.AccountSessionRepository;
+import com.jyeeeh.sipspot.repository.RoomRepository;
+import com.jyeeeh.sipspot.service.PresenceRegistry;
 import com.jyeeeh.sipspot.service.TokenService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.MessageDeliveryException;
@@ -15,6 +20,7 @@ import org.springframework.stereotype.Component;
 
 import java.security.Principal;
 import java.util.List;
+import java.util.Optional;
 
 @Component
 public class StompChannelInterceptor implements ChannelInterceptor {
@@ -22,12 +28,20 @@ public class StompChannelInterceptor implements ChannelInterceptor {
     private static final Logger log = LoggerFactory.getLogger(StompChannelInterceptor.class);
     private static final String TOPIC_ROOMS_PREFIX = "/topic/rooms/";
 
+    private final AccountSessionRepository sessionRepo;
     private final TokenService tokenService;
-    private final MemberRepository memberRepository;
+    private final RoomRepository roomRepo;
+    private final PresenceRegistry presenceRegistry;
 
-    public StompChannelInterceptor(TokenService tokenService, MemberRepository memberRepository) {
+    @Autowired
+    public StompChannelInterceptor(AccountSessionRepository sessionRepo,
+                                   TokenService tokenService,
+                                   RoomRepository roomRepo,
+                                   @Lazy PresenceRegistry presenceRegistry) {
+        this.sessionRepo = sessionRepo;
         this.tokenService = tokenService;
-        this.memberRepository = memberRepository;
+        this.roomRepo = roomRepo;
+        this.presenceRegistry = presenceRegistry;
     }
 
     @Override
@@ -46,10 +60,8 @@ public class StompChannelInterceptor implements ChannelInterceptor {
                 default -> message;
             };
         } catch (MessageDeliveryException e) {
-            // 의도적 거부 — 이미 handleConnect/handleSubscribe 안에서 warn 로그를 남겼음
             throw e;
         } catch (Exception e) {
-            // 예상치 못한 예외 — 스택트레이스 전체 기록
             log.error("STOMP preSend 처리 중 예상치 못한 예외 발생", e);
             throw new MessageDeliveryException(message, e);
         }
@@ -59,55 +71,58 @@ public class StompChannelInterceptor implements ChannelInterceptor {
         String sessionId = accessor.getSessionId();
         List<String> authHeaders = accessor.getNativeHeader("Authorization");
 
-        // ① Authorization 헤더 자체가 없음
+        // Authorization 헤더가 없으면 익명 연결 허용
         if (authHeaders == null || authHeaders.isEmpty()) {
-            log.warn("STOMP CONNECT 거부 — Authorization 헤더 없음 (sessionId={})", sessionId);
-            throw new MessageDeliveryException("Authorization 헤더가 없습니다.");
+            log.debug("STOMP CONNECT 허용 — 익명 (sessionId={})", sessionId);
+            return message;
         }
 
-        // ② 헤더는 있으나 Bearer 형식이 아님
         String token = extractBearerToken(authHeaders);
         if (token == null) {
-            log.warn("STOMP CONNECT 거부 — Authorization 헤더 형식 오류: 'Bearer ' 접두사 없음 (sessionId={})", sessionId);
-            throw new MessageDeliveryException("Authorization 헤더 형식이 잘못됐습니다.");
+            log.warn("STOMP CONNECT 거부 — Authorization 헤더 형식 오류 (sessionId={})", sessionId);
+            throw new MessageDeliveryException(message,
+                    new IllegalArgumentException("Authorization 헤더 형식이 잘못됐습니다."));
         }
 
-        // ③ 토큰은 있으나 DB에서 token_hash로 멤버를 찾지 못함 (토큰 원문은 로그에 남기지 않음)
         String tokenHash = tokenService.hash(token);
-        var memberOpt = memberRepository.findByTokenHashWithRoom(tokenHash);
-        if (memberOpt.isEmpty()) {
-            log.warn("STOMP CONNECT 거부 — 토큰 해시에 해당하는 멤버 없음 (sessionId={})", sessionId);
-            throw new MessageDeliveryException("인증 실패");
+        Optional<AccountSession> sessionOpt = sessionRepo.findByTokenHashWithAccount(tokenHash);
+        if (sessionOpt.isEmpty()) {
+            log.warn("STOMP CONNECT 거부 — 유효하지 않은 토큰 (sessionId={})", sessionId);
+            throw new MessageDeliveryException(message,
+                    new IllegalArgumentException("인증 실패"));
         }
 
-        var member = memberOpt.get();
-        String roomCode = member.getRoom().getCode().toUpperCase();
-        accessor.setUser(new MemberPrincipal(member.getId(), roomCode));
-        log.debug("STOMP CONNECT 허용 — memberId={}, roomCode={}, sessionId={}", member.getId(), roomCode, sessionId);
+        AccountSession accountSession = sessionOpt.get();
+        Long accountId = accountSession.getAccount().getId();
+
+        // 이 계정이 호스트인 방 코드 조회 (없으면 null)
+        String roomCode = roomRepo.findByHostAccountId(accountId)
+                .map(r -> r.getCode())
+                .orElse(null);
+
+        accessor.setUser(new AccountPrincipal(accountId, roomCode));
+        log.debug("STOMP CONNECT 허용 — accountId={}, roomCode={}, sessionId={}", accountId, roomCode, sessionId);
         return message;
     }
 
     private Message<?> handleSubscribe(Message<?> message, StompHeaderAccessor accessor) {
         String sessionId = accessor.getSessionId();
-        Principal user = accessor.getUser();
-        if (!(user instanceof MemberPrincipal principal)) {
-            log.warn("STOMP SUBSCRIBE 거부 — Principal 없음 (sessionId={})", sessionId);
-            throw new MessageDeliveryException("인증되지 않은 사용자");
-        }
-
         String destination = accessor.getDestination();
+
         if (destination == null || !destination.startsWith(TOPIC_ROOMS_PREFIX)) {
-            log.warn("STOMP SUBSCRIBE 거부 — 허용되지 않은 목적지: {} (memberId={})", destination, principal.memberId());
-            throw new MessageDeliveryException("허용되지 않은 구독 목적지: " + destination);
+            log.warn("STOMP SUBSCRIBE 거부 — 허용되지 않은 목적지: {} (sessionId={})", destination, sessionId);
+            throw new MessageDeliveryException(message,
+                    new IllegalArgumentException("허용되지 않은 구독 목적지: " + destination));
         }
 
-        String codeInDest = destination.substring(TOPIC_ROOMS_PREFIX.length()).toUpperCase();
-        if (!codeInDest.equals(principal.roomCode())) {
-            log.warn("STOMP SUBSCRIBE 거부 — 다른 방 구독 시도: dest={}, memberId={}", destination, principal.memberId());
-            throw new MessageDeliveryException("다른 방 구독 불가");
-        }
+        String roomCode = destination.substring(TOPIC_ROOMS_PREFIX.length()).toUpperCase();
 
-        log.debug("STOMP SUBSCRIBE 허용 — dest={}, memberId={}", destination, principal.memberId());
+        // 구독자 accountId 추출 (익명이면 null)
+        Principal user = accessor.getUser();
+        Long accountId = (user instanceof AccountPrincipal p) ? p.accountId() : null;
+
+        presenceRegistry.addViewer(sessionId, roomCode, accountId);
+        log.debug("STOMP SUBSCRIBE 허용 — dest={}, accountId={}, sessionId={}", destination, accountId, sessionId);
         return message;
     }
 
