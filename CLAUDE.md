@@ -1,4 +1,4 @@
-# CLAUDE.md — Sip Spot 프로젝트 지침
+# CLAUDE.md — CupDrop 프로젝트 지침
 
 ## 스택
 
@@ -6,7 +6,7 @@
 |---|---|
 | Frontend | Vue 3 + Vite + JavaScript (TypeScript 사용 안 함), Pinia, Vue Router 4 |
 | Backend | Java 21, Spring Boot 4.1.0, Spring Framework 7, Gradle 8.14+ |
-| Java 패키지 | `com.jyeeeh.sipspot` (언더스코어 사용 금지) |
+| Java 패키지 | `com.jyeeeh.cupdrop` (언더스코어 사용 금지) |
 | DB | PostgreSQL |
 
 ---
@@ -36,8 +36,8 @@ Sip_spot/
     ├── gradle/wrapper/
     ├── .env.example
     └── src/main/
-        ├── java/com/jyeeeh/sipspot/
-        │   ├── SipspotApplication.java
+        ├── java/com/jyeeeh/cupdrop/
+        │   ├── CupdropApplication.java
         │   ├── config/CorsConfig.java
         │   └── controller/HealthController.java
         └── resources/
@@ -103,7 +103,7 @@ cd frontend && npm install && npm run dev
 - **비밀번호**: BCrypt(spring-security-crypto만 사용, Spring Security 전체 미사용), 최소 8자
 - **세션 토큰**: `SecureRandom(32 bytes)` → base64url(패딩 없음) → 클라이언트 응답; DB에는 SHA-256 hex(64자)만 저장
 - **원문 토큰은 로그에 절대 남기지 않는다**
-- 프론트엔드는 계정 토큰을 `localStorage`의 `sipspot_account_token` 키 하나에만 저장
+- 프론트엔드는 계정 토큰을 `localStorage`의 `cupdrop_account_token` 키 하나에만 저장
 - **인증이 필요한 API**: `POST /api/rooms` (방 생성). Authorization 헤더가 없거나 세션 없으면 401
 - **공개 API**: `GET /api/rooms/{code}` — 인증 불필요
 
