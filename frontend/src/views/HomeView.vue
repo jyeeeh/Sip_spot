@@ -1,6 +1,6 @@
 <template>
   <main class="home">
-    <h1>Sip Spot</h1>
+    <h1>CupDrop</h1>
 
     <!-- 로그인 상태 -->
     <template v-if="authStore.account">

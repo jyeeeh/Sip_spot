@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080'
-const TOKEN_KEY = 'sipspot_account_token'
+const TOKEN_KEY = 'cupdrop_account_token'
 
 export const useAuthStore = defineStore('auth', () => {
   // account: { accountId, nickname, token, room } | null

@@ -1,6 +1,6 @@
 <template>
   <main class="auth-page">
-    <h1>Sip Spot</h1>
+    <h1>CupDrop</h1>
 
     <div class="tabs">
       <button :class="{ 'tab--active': mode === 'login' }" @click="mode = 'login'">로그인</button>
