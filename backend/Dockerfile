@@ -19,7 +19,7 @@ WORKDIR /app
 RUN adduser -D -u 1001 appuser
 
 COPY --from=builder --chown=appuser:appuser \
-     /app/build/libs/sipspot-0.1.0-SNAPSHOT.jar app.jar
+     /app/build/libs/*.jar app.jar
 
 USER appuser
 
