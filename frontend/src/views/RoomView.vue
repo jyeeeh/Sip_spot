@@ -57,10 +57,24 @@
         <!-- 게스트 전송 폼 -->
         <form v-if="!isHost" class="coffee-form" @submit.prevent="handleSendCoffee">
           <input
+            v-model="coffeeName"
+            type="text"
+            placeholder="이름 (필수, 최대 10자)"
+            maxlength="10"
+            required
+          />
+          <input
             v-model="coffeeMessage"
             type="text"
             placeholder="응원 메시지 (선택)"
             maxlength="200"
+          />
+          <input
+            v-model="coffeeDeletePassword"
+            type="password"
+            placeholder="삭제용 비밀번호 (4자 이상)"
+            minlength="4"
+            required
           />
           <button type="submit" :disabled="coffeeSending">보내기</button>
         </form>
@@ -71,8 +85,11 @@
         <div class="coffee-body">
           <ul class="coffee-list">
             <li v-for="coffee in pagedCoffees" :key="coffee.id" class="coffee-item">
-              <span class="coffee-msg">{{ coffee.message || '커피를 후원했습니다.' }}</span>
-              <button v-if="isHost" class="btn-delete" @click="requestDelete(coffee.id)">✕</button>
+              <span class="coffee-msg">
+                <span class="coffee-name">{{ coffee.name }}</span>
+                {{ ' | ' + (coffee.message || '커피를 후원했습니다.') }}
+              </span>
+              <button class="btn-delete" @click="requestDelete(coffee.id)">✕</button>
             </li>
             <li v-if="roomStore.coffees.length === 0" class="coffee-empty">아직 커피가 없습니다.</li>
           </ul>
@@ -93,13 +110,32 @@
 
   </main>
 
-  <!-- 삭제 확인 모달 -->
+  <!-- 호스트 삭제 확인 모달 -->
   <div v-if="deleteConfirmId !== null" class="modal-overlay" @click.self="deleteConfirmId = null">
     <div class="modal">
       <p class="modal-text">정말 삭제하시겠습니까?</p>
       <div class="modal-buttons">
         <button class="btn-modal-confirm" @click="confirmDelete">확인</button>
         <button class="btn-modal-cancel" @click="deleteConfirmId = null">취소</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 게스트 비밀번호 삭제 모달 -->
+  <div v-if="deletePasswordModalId !== null" class="modal-overlay" @click.self="closePasswordModal">
+    <div class="modal">
+      <p class="modal-text">비밀번호를 입력하세요</p>
+      <input
+        v-model="deletePasswordInput"
+        type="password"
+        class="modal-input"
+        placeholder="삭제용 비밀번호"
+        @keyup.enter="confirmPasswordDelete"
+      />
+      <p v-if="deletePasswordError" class="error modal-error">{{ deletePasswordError }}</p>
+      <div class="modal-buttons">
+        <button class="btn-modal-confirm" :disabled="deletePasswordPending" @click="confirmPasswordDelete">확인</button>
+        <button class="btn-modal-cancel" @click="closePasswordModal">취소</button>
       </div>
     </div>
   </div>
@@ -159,19 +195,27 @@ watch(totalPages, (pages) => {
   if (coffeePage.value > pages) coffeePage.value = pages
 })
 
+const coffeeName = ref('')
 const coffeeMessage = ref('')
+const coffeeDeletePassword = ref('')
 const coffeeSending = ref(false)
 const coffeeError = ref('')
 const coffeeSent = ref(false)
 const deleteConfirmId = ref(null)
+const deletePasswordModalId = ref(null)
+const deletePasswordInput = ref('')
+const deletePasswordError = ref('')
+const deletePasswordPending = ref(false)
 
 async function handleSendCoffee() {
   coffeeError.value = ''
   coffeeSent.value = false
   coffeeSending.value = true
   try {
-    await roomStore.sendCoffee(code, coffeeMessage.value.trim() || null)
+    await roomStore.sendCoffee(code, coffeeName.value.trim(), coffeeMessage.value.trim() || null, coffeeDeletePassword.value)
+    coffeeName.value = ''
     coffeeMessage.value = ''
+    coffeeDeletePassword.value = ''
     coffeeSent.value = true
     setTimeout(() => { coffeeSent.value = false }, 3000)
   } catch (e) {
@@ -182,7 +226,13 @@ async function handleSendCoffee() {
 }
 
 function requestDelete(id) {
-  deleteConfirmId.value = id
+  if (isHost.value) {
+    deleteConfirmId.value = id
+  } else {
+    deletePasswordModalId.value = id
+    deletePasswordInput.value = ''
+    deletePasswordError.value = ''
+  }
 }
 
 async function confirmDelete() {
@@ -192,6 +242,26 @@ async function confirmDelete() {
     await roomStore.deleteCoffee(code, id)
   } catch (e) {
     // 이미 WS로 반영되므로 무시
+  }
+}
+
+function closePasswordModal() {
+  deletePasswordModalId.value = null
+  deletePasswordInput.value = ''
+  deletePasswordError.value = ''
+}
+
+async function confirmPasswordDelete() {
+  const id = deletePasswordModalId.value
+  deletePasswordError.value = ''
+  deletePasswordPending.value = true
+  try {
+    await roomStore.deleteCoffee(code, id, deletePasswordInput.value)
+    closePasswordModal()
+  } catch (e) {
+    deletePasswordError.value = e.message
+  } finally {
+    deletePasswordPending.value = false
   }
 }
 
@@ -274,15 +344,16 @@ onUnmounted(() => {
 /* ── 커피 패널 ─────────────────────────────────────────────────────────── */
 .coffee-panel { margin-top: 24px; border-top: 1px solid #dee2e6; padding-top: 16px; }
 .coffee-panel h3 { margin-bottom: 12px; font-size: 1rem; }
-.coffee-form { display: flex; gap: 8px; margin-bottom: 8px; }
-.coffee-form input { flex: 1; padding: 6px 8px; font-size: 0.9rem; border: 1px solid #dee2e6; border-radius: 4px; }
-.coffee-form button { padding: 6px 12px; font-size: 0.9rem; cursor: pointer; background: #0d6efd; color: #fff; border: none; border-radius: 4px; }
+.coffee-form { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.coffee-form input { padding: 6px 8px; font-size: 0.9rem; border: 1px solid #dee2e6; border-radius: 4px; width: 100%; box-sizing: border-box; }
+.coffee-form button { padding: 6px 12px; font-size: 0.9rem; cursor: pointer; background: #0d6efd; color: #fff; border: none; border-radius: 4px; align-self: flex-end; }
 .coffee-form button:disabled { opacity: 0.6; cursor: not-allowed; }
 .coffee-sent { color: #28a745; font-size: 0.85rem; margin-bottom: 8px; }
 .coffee-body { min-height: 252px; display: flex; flex-direction: column; }
 .coffee-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
 .coffee-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; background: #f8f9fa; border-radius: 6px; font-size: 0.9rem; }
 .coffee-msg { flex: 1; word-break: break-word; color: #343a40; }
+.coffee-name { font-weight: 600; color: #495057; }
 .coffee-empty { color: #adb5bd; font-size: 0.85rem; padding: 8px 0; }
 .btn-delete { background: none; border: none; color: #adb5bd; cursor: pointer; font-size: 0.85rem; padding: 0 4px; flex-shrink: 0; }
 .btn-delete:hover { color: #dc3545; }
@@ -298,4 +369,6 @@ onUnmounted(() => {
 .modal-buttons { display: flex; gap: 10px; justify-content: center; }
 .btn-modal-confirm { padding: 8px 20px; background: #dc3545; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9rem; }
 .btn-modal-cancel  { padding: 8px 20px; background: #f8f9fa; color: #343a40; border: 1px solid #dee2e6; border-radius: 4px; cursor: pointer; font-size: 0.9rem; }
+.modal-input { width: 100%; box-sizing: border-box; padding: 7px 10px; margin-bottom: 8px; font-size: 0.9rem; border: 1px solid #dee2e6; border-radius: 4px; }
+.modal-error { font-size: 0.85rem; margin-bottom: 8px; }
 </style>

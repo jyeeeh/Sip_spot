@@ -13,7 +13,7 @@ export const useRoomStore = defineStore('room', () => {
   const error = ref(null)
   const connected = ref(false)
   const reconnecting = ref(false)
-  // coffees: [{ id, message, status, createdAt }] (newest first)
+  // coffees: [{ id, name, message, status, createdAt }] (newest first)
   const coffees = ref([])
 
   let stompClient = null
@@ -74,12 +74,12 @@ export const useRoomStore = defineStore('room', () => {
     }
   }
 
-  async function sendCoffee(code, message) {
+  async function sendCoffee(code, name, message, password) {
     const upperCode = code.toUpperCase()
     const res = await fetch(`${API_BASE}/api/rooms/${upperCode}/coffees`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: message || null }),
+      body: JSON.stringify({ name, message: message || null, password }),
     })
     if (!res.ok) {
       const err = await res.json().catch(() => ({}))
@@ -88,17 +88,30 @@ export const useRoomStore = defineStore('room', () => {
     return res.json()
   }
 
-  async function deleteCoffee(code, id) {
-    const authStore = useAuthStore()
-    const token = authStore.loadToken()
+  // password=null → 호스트 경로 (Authorization 헤더), password값 → 게스트 경로 (body)
+  async function deleteCoffee(code, id, password = null) {
     const upperCode = code.toUpperCase()
-    const res = await fetch(`${API_BASE}/api/rooms/${upperCode}/coffees/${id}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}` },
-    })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
-      throw new Error(err.detail ?? `오류 ${res.status}`)
+    if (password === null) {
+      const authStore = useAuthStore()
+      const token = authStore.loadToken()
+      const res = await fetch(`${API_BASE}/api/rooms/${upperCode}/coffees/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.detail ?? `오류 ${res.status}`)
+      }
+    } else {
+      const res = await fetch(`${API_BASE}/api/rooms/${upperCode}/coffees/${id}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.detail ?? `오류 ${res.status}`)
+      }
     }
   }
 
