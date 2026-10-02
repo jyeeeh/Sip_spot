@@ -24,4 +24,4 @@ spring:
 logging:
   level:
     root: INFO
-    com.jyeeeh.sipspot: DEBUG
+    com.jyeeeh.cupdrop: DEBUG

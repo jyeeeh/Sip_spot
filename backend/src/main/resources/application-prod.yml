@@ -25,4 +25,4 @@ spring:
 logging:
   level:
     root: WARN
-    com.jyeeeh.sipspot: INFO
+    com.jyeeeh.cupdrop: INFO
