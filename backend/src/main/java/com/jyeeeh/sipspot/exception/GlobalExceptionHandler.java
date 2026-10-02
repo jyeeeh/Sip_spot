@@ -65,6 +65,11 @@ public class GlobalExceptionHandler {
         return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, "존재하지 않는 커피입니다.");
     }
 
+    @ExceptionHandler(CoffeeService.CoffeeValidationException.class)
+    public ProblemDetail handleCoffeeValidation(CoffeeService.CoffeeValidationException e) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, e.getMessage());
+    }
+
     @ExceptionHandler(RateLimitExceededException.class)
     public ProblemDetail handleRateLimit(RateLimitExceededException e) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.TOO_MANY_REQUESTS,

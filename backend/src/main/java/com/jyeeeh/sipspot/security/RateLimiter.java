@@ -22,9 +22,14 @@ public class RateLimiter {
     private static final int COFFEE_LIMIT = 1;
     private static final long COFFEE_WINDOW_MS = 5 * 1000L;
 
+    // 커피 삭제: IP당 1분 10회 (체크리스트 9: 비밀번호 무차별 대입 방지)
+    private static final int COFFEE_DELETE_LIMIT = 10;
+    private static final long COFFEE_DELETE_WINDOW_MS = 60 * 1000L;
+
     private final ConcurrentHashMap<String, Window> loginMap = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Window> signupMap = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Window> coffeeMap = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Window> coffeeDeleteMap = new ConcurrentHashMap<>();
 
     public boolean isLoginBlocked(String ip) {
         return isBlocked(loginMap, ip, LOGIN_WINDOW_MS, LOGIN_LIMIT);
@@ -48,6 +53,14 @@ public class RateLimiter {
 
     public void recordCoffee(String ip) {
         record(coffeeMap, ip, COFFEE_WINDOW_MS);
+    }
+
+    public boolean isCoffeeDeleteBlocked(String ip) {
+        return isBlocked(coffeeDeleteMap, ip, COFFEE_DELETE_WINDOW_MS, COFFEE_DELETE_LIMIT);
+    }
+
+    public void recordCoffeeDelete(String ip) {
+        record(coffeeDeleteMap, ip, COFFEE_DELETE_WINDOW_MS);
     }
 
     private boolean isBlocked(ConcurrentHashMap<String, Window> map, String ip,
@@ -78,6 +91,7 @@ public class RateLimiter {
         loginMap.entrySet().removeIf(e -> now - e.getValue().startMs > LOGIN_WINDOW_MS);
         signupMap.entrySet().removeIf(e -> now - e.getValue().startMs > SIGNUP_WINDOW_MS);
         coffeeMap.entrySet().removeIf(e -> now - e.getValue().startMs > COFFEE_WINDOW_MS);
+        coffeeDeleteMap.entrySet().removeIf(e -> now - e.getValue().startMs > COFFEE_DELETE_WINDOW_MS);
     }
 
     private static class Window {

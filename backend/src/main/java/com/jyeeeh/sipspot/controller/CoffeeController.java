@@ -2,6 +2,7 @@ package com.jyeeeh.sipspot.controller;
 
 import com.jyeeeh.sipspot.domain.AccountSession;
 import com.jyeeeh.sipspot.dto.CoffeeResponse;
+import com.jyeeeh.sipspot.dto.DeleteCoffeeRequest;
 import com.jyeeeh.sipspot.dto.SendCoffeeRequest;
 import com.jyeeeh.sipspot.exception.RateLimitExceededException;
 import com.jyeeeh.sipspot.security.RateLimiter;
@@ -9,8 +10,10 @@ import com.jyeeeh.sipspot.security.SessionResolver;
 import com.jyeeeh.sipspot.service.AccountService;
 import com.jyeeeh.sipspot.service.CoffeeService;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 
@@ -38,13 +41,13 @@ public class CoffeeController {
     @ResponseStatus(HttpStatus.CREATED)
     public CoffeeResponse sendCoffee(
             @PathVariable String code,
-            @RequestBody(required = false) SendCoffeeRequest body,
+            @Valid @RequestBody SendCoffeeRequest body,
             HttpServletRequest request) {
+        // 체크리스트 9: 전송 레이트리밋 (IP/5초/1회)
         String ip = request.getRemoteAddr();
         if (rateLimiter.isCoffeeBlocked(ip)) throw new RateLimitExceededException();
         rateLimiter.recordCoffee(ip);
-        String message = (body != null) ? body.message() : null;
-        return coffeeService.sendCoffee(code, message);
+        return coffeeService.sendCoffee(code, body.name(), body.message(), body.password());
     }
 
     @DeleteMapping("/{id}")
@@ -52,9 +55,26 @@ public class CoffeeController {
     public void deleteCoffee(
             @PathVariable String code,
             @PathVariable Long id,
-            @RequestHeader(value = "Authorization", required = false) String authHeader) {
-        AccountSession session = sessionResolver.resolveFromHeader(authHeader)
-                .orElseThrow(AccountService.UnauthorizedException::new);
-        coffeeService.deleteCoffee(id, code, session.getAccount().getId());
+            @RequestHeader(value = "Authorization", required = false) String authHeader,
+            @RequestBody(required = false) DeleteCoffeeRequest body,
+            HttpServletRequest request) {
+        // 체크리스트 9: 삭제 레이트리밋 (IP/1분/10회) — 비밀번호 무차별 대입 방지
+        String ip = request.getRemoteAddr();
+        if (rateLimiter.isCoffeeDeleteBlocked(ip)) throw new RateLimitExceededException();
+        rateLimiter.recordCoffeeDelete(ip);
+
+        if (authHeader != null) {
+            // 체크리스트 4: 호스트 경로 — 서버가 발급한 세션 토큰으로만 신원 확인
+            AccountSession session = sessionResolver.resolveFromHeader(authHeader)
+                    .orElseThrow(AccountService.UnauthorizedException::new);
+            coffeeService.deleteCoffeeByHost(id, code, session.getAccount().getId());
+        } else if (body != null && body.password() != null && !body.password().isBlank()) {
+            // 비밀번호 경로
+            coffeeService.deleteCoffeeByPassword(id, code, body.password());
+        } else {
+            // 둘 다 없으면 400
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Authorization 헤더 또는 비밀번호가 필요합니다.");
+        }
     }
 }
